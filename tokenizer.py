@@ -17,7 +17,7 @@ from typing import Any, Iterable, Sequence
 
 
 class MidiTokenizer:
-    """Tokenizer for note dicts with fields: pitch/start_step/duration_step/velocity/program."""
+    """Tokenizer for quantized note dicts with fields: pitch/start_step/duration_step/velocity/program (optionally channel)."""
 
     SPECIAL_TOKENS = ["<PAD>", "<BOS>", "<EOS>", "<UNK>"]
 
