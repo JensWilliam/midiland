@@ -66,7 +66,16 @@ class TimeSignatureEvent(Event):
     denominator: int
 
 
-MidiEvent: TypeAlias = NoteEvent | ProgramChangeEvent | TempoEvent | TimeSignatureEvent
+@dataclass(frozen=True, slots=True)
+class KeySignatureEvent(Event):
+    """Key signature meta event."""
+
+    key: str
+
+
+MidiEvent: TypeAlias = (
+    NoteEvent | ProgramChangeEvent | TempoEvent | TimeSignatureEvent | KeySignatureEvent
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -99,7 +108,7 @@ def parse_midi_file(
     Args:
         midi_path: Input .mid file path.
         ignore_drums: If True, drop channel 10 (index 9) events.
-        include_meta: If True, also include tempo/time signature meta events.
+        include_meta: If True, also include tempo/time/key-signature meta events.
         notes_only: If True, return only NoteEvent objects.
     """
     if mido is None:
@@ -134,6 +143,8 @@ def parse_midi_file(
                             denominator=int(msg.denominator),
                         )
                     )
+                elif msg.type == "key_signature" and hasattr(msg, "key"):
+                    events.append(KeySignatureEvent(time=int(abs_tick), key=str(msg.key)))
             continue
 
         if not hasattr(msg, "channel"):
@@ -191,8 +202,9 @@ def parse_midi_file(
         order: dict[type, int] = {
             TempoEvent: 0,
             TimeSignatureEvent: 1,
-            ProgramChangeEvent: 2,
-            NoteEvent: 3,
+            KeySignatureEvent: 2,
+            ProgramChangeEvent: 3,
+            NoteEvent: 4,
         }
         if isinstance(e, NoteEvent):
             return (int(e.time), order[NoteEvent], int(e.channel), int(e.pitch))
@@ -200,7 +212,9 @@ def parse_midi_file(
             return (int(e.time), order[ProgramChangeEvent], int(e.channel), int(e.program))
         if isinstance(e, TempoEvent):
             return (int(e.time), order[TempoEvent], int(e.tempo), 0)
-        return (int(e.time), order[TimeSignatureEvent], int(e.numerator), int(e.denominator))
+        if isinstance(e, TimeSignatureEvent):
+            return (int(e.time), order[TimeSignatureEvent], int(e.numerator), int(e.denominator))
+        return (int(e.time), order[KeySignatureEvent], 0, 0)
 
     events.sort(key=_event_sort_key)
     if notes_only:
@@ -247,14 +261,18 @@ def quantize_note_events(
 def events_to_dicts(events: Iterable[MidiEvent]) -> list[dict]:
     """Convert events to plain dicts (JSON-friendly), including an explicit type."""
 
-    def _type_name(e: MidiEvent) -> Literal["note", "program_change", "tempo", "time_signature"]:
+    def _type_name(
+        e: MidiEvent,
+    ) -> Literal["note", "program_change", "tempo", "time_signature", "key_signature"]:
         if isinstance(e, NoteEvent):
             return "note"
         if isinstance(e, ProgramChangeEvent):
             return "program_change"
         if isinstance(e, TempoEvent):
             return "tempo"
-        return "time_signature"
+        if isinstance(e, TimeSignatureEvent):
+            return "time_signature"
+        return "key_signature"
 
     out: list[dict] = []
     for event in events:
@@ -267,7 +285,11 @@ def events_to_dicts(events: Iterable[MidiEvent]) -> list[dict]:
 def main() -> None:
     parser = argparse.ArgumentParser(description="Parse MIDI into typed tick-timed events.")
     parser.add_argument("midi_path", help="Path to input MIDI file.")
-    parser.add_argument("--include-meta", action="store_true", help="Include tempo/time signature.")
+    parser.add_argument(
+        "--include-meta",
+        action="store_true",
+        help="Include tempo/time signature/key signature.",
+    )
     parser.add_argument("--keep-drums", action="store_true", help="Do not filter channel 10.")
     parser.add_argument(
         "--format",
