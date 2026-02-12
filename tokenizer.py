@@ -826,6 +826,12 @@ def _preview_tokens(tokens: Sequence[int], *, limit: int = 24) -> list[str]:
 def main() -> None:
     parser = argparse.ArgumentParser(description="Tokenize MIDI into integer IDs.")
     parser.add_argument("midi_path", help="Path to input .mid file.")
+    parser.add_argument(
+        "--out",
+        type=str,
+        default=None,
+        help="Optional output path for saving token IDs as a .npy file.",
+    )
     parser.add_argument("--steps-per-beat", type=int, default=4)
     parser.add_argument("--window-size", type=int, default=4096)
     parser.add_argument("--overlap", type=int, default=512)
@@ -870,6 +876,18 @@ def main() -> None:
         first_window = windows[0][: max(0, int(args.preview))]
         print(f"First window prefix IDs: {first_window}")
         print(f"First window prefix decoded: {_preview_tokens(first_window, limit=int(args.preview))}")
+
+    if args.out:
+        try:
+            import numpy as np
+        except ModuleNotFoundError as exc:
+            raise ModuleNotFoundError(
+                "numpy is required to save .npy output. Install it with: pip install numpy"
+            ) from exc
+        out_path = Path(args.out)
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        np.save(out_path, np.asarray(tokens, dtype=np.int64))
+        print(f"Saved token IDs to: {out_path}")
 
 
 if __name__ == "__main__":

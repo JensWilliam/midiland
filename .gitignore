@@ -1,0 +1,27 @@
+# Python bytecode / caches
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Jupyter / notebooks
+.ipynb_checkpoints/
+
+# Editor / OS
+.vscode/
+.idea/
+.DS_Store
+
+# Project artifacts (training outputs, generated files)
+checkpoints/
+generated.mid
+generated_tokens*.npy
+tokens.npy
+
