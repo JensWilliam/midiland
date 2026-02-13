@@ -660,6 +660,30 @@ def tokenize_piece(
     return tokens
 
 
+def tokenize_midi_path(midi_path: str | Path, steps_per_beat: int = 4) -> list[int]:
+    """
+    Tokenize a MIDI path into one unwindowed token stream (header + full piece events).
+    """
+    if mido is None:
+        raise ModuleNotFoundError(
+            "mido is required for MIDI tokenization. Install it with: pip install mido"
+        )
+
+    midi_file_path = Path(midi_path)
+    midi = mido.MidiFile(str(midi_file_path))
+    events = parse_midi_file(
+        midi_file_path,
+        ignore_drums=True,
+        include_meta=True,
+        notes_only=False,
+    )
+    return tokenize_piece(
+        events,
+        ticks_per_beat=int(midi.ticks_per_beat),
+        steps_per_beat=int(steps_per_beat),
+    )
+
+
 def _extract_initial_state(tokens: Sequence[int], vocab: Vocabulary) -> tuple[_WindowState, int]:
     state = _WindowState(
         time_signature=vocab.default_time_signature,
@@ -845,19 +869,7 @@ def main() -> None:
         )
 
     midi_path = Path(args.midi_path)
-    midi = mido.MidiFile(str(midi_path))
-    events = parse_midi_file(
-        midi_path,
-        ignore_drums=True,
-        include_meta=True,
-        notes_only=False,
-    )
-
-    tokens = tokenize_piece(
-        events,
-        ticks_per_beat=int(midi.ticks_per_beat),
-        steps_per_beat=int(args.steps_per_beat),
-    )
+    tokens = tokenize_midi_path(midi_path, steps_per_beat=int(args.steps_per_beat))
     windows = split_windows(
         tokens,
         window_size=int(args.window_size),

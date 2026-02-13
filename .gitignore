@@ -25,3 +25,6 @@ generated.mid
 generated_tokens*.npy
 tokens.npy
 
+.env
+
+*.npy
