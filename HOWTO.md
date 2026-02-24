@@ -133,4 +133,5 @@ Useful flags:
 python download_hf_dataset.py drengskapur/midi-classical-music data_midi --mode copy
 python download_hf_dataset.py drengskapur/midi-classical-music data_midi --limit 50
 python download_hf_dataset.py drengskapur/midi-classical-music data_midi --revision main
+python download_hf_dataset.py drengskapur/midi-classical-music data_midi --overwrite
 ```

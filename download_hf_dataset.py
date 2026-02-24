@@ -61,17 +61,21 @@ def _materialize_file(src: Path, dst: Path, *, mode: str) -> None:
     _ensure_parent(dst)
     if dst.exists():
         return
+    # HF cache snapshots often store files as symlinks to blob objects. If we copy/link the
+    # symlink itself, it will usually be broken outside the cache directory, so dereference.
+    src_real = src.resolve(strict=True) if src.is_symlink() else src
     if mode == "copy":
-        shutil.copy2(src, dst)
+        shutil.copy2(src_real, dst)
         return
     if mode == "symlink":
-        os.symlink(src, dst)
+        # Use an absolute symlink so it's valid from the output directory.
+        os.symlink(src_real, dst)
         return
     if mode == "hardlink":
         try:
-            os.link(src, dst)
+            os.link(src_real, dst)
         except OSError:
-            shutil.copy2(src, dst)
+            shutil.copy2(src_real, dst)
         return
     raise ValueError("mode must be one of: copy, hardlink, symlink")
 
@@ -87,6 +91,7 @@ def main() -> None:
         default="hardlink",
         help="How to place MIDI files into out_dir/midis (default: hardlink, falls back to copy).",
     )
+    p.add_argument("--overwrite", action="store_true", help="Overwrite existing files in out_dir.")
     p.add_argument("--limit", type=int, help="Only materialize first N MIDI files.")
     p.add_argument(
         "--env-file",
@@ -136,6 +141,8 @@ def main() -> None:
         for src in midi_files:
             rel = src.relative_to(snapshot_path)
             dst = out_midis / rel
+            if dst.exists() and bool(args.overwrite):
+                dst.unlink()
             _materialize_file(src, dst, mode=str(args.mode))
             written += 1
             mf.write(
@@ -169,4 +176,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

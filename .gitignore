@@ -28,3 +28,6 @@ tokens.npy
 .env
 
 *.mid
+
+data_midi/
+data_tokens/
