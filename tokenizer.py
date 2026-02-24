@@ -66,7 +66,7 @@ TokenType = Literal[
 
 @dataclass(frozen=True, slots=True)
 class TokenizerConfig:
-    steps_per_beat: int = 4  # "steps per quarter note" for bar math
+    steps_per_beat: int = 8  # "steps per quarter note" for bar math
     max_time_shift: int = 64
     coarse_time_shift_unit: int = 64
     max_coarse_time_shift: int = 64

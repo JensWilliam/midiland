@@ -27,7 +27,7 @@ def main() -> None:
         "--out",
         help="Optional output .mid path (default: input filename + _out).",
     )
-    p.add_argument("--steps-per-beat", type=int, default=4)
+    p.add_argument("--steps-per-beat", type=int, default=8)
     p.add_argument("--keep-drums", action="store_true", help="Do not filter MIDI channel 10.")
     p.add_argument("--print-tokens", type=int, default=80)
     args = p.parse_args()
