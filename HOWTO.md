@@ -115,3 +115,22 @@ If something sounds wrong in the `_out.mid`:
 | Roundtrip w/ more resolution | `python midi_roundtrip.py song.mid --steps-per-beat 8` |
 | Preprocess a dataset folder | `python preprocess_dataset.py midis data_tokens` |
 
+## Download a HF Dataset Repo (MIDI Files)
+
+If your dataset lives on Hugging Face as a dataset repo with `.mid` files (like `drengskapur/midi-classical-music`),
+you can download the MIDI files into a local folder:
+
+```bash
+python download_hf_dataset.py drengskapur/midi-classical-music data_midi
+```
+
+Outputs:
+- `data_midi/midis/` — the MIDI files (hardlinked by default; falls back to copy)
+- `data_midi/manifest.jsonl` + `data_midi/stats.json`
+
+Useful flags:
+```bash
+python download_hf_dataset.py drengskapur/midi-classical-music data_midi --mode copy
+python download_hf_dataset.py drengskapur/midi-classical-music data_midi --limit 50
+python download_hf_dataset.py drengskapur/midi-classical-music data_midi --revision main
+```
