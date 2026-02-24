@@ -114,6 +114,24 @@ If something sounds wrong in the `_out.mid`:
 | Roundtrip one file | `python midi_roundtrip.py song.mid` |
 | Roundtrip w/ more resolution | `python midi_roundtrip.py song.mid --steps-per-beat 8` |
 | Preprocess a dataset folder | `python preprocess_dataset.py midis data_tokens` |
+| Make training windows | `python make_windows.py data_tokens data_windows` |
+
+## Make Fixed-Length Training Windows
+
+Turns per-MIDI token arrays into fixed-length windows (default `seq_len=2048`, `stride=1024`).
+Windows never cross song boundaries, and window boundaries are aligned so they don’t cut inside EV_* arguments.
+
+```bash
+python make_windows.py data_tokens data_windows
+```
+
+Useful flags:
+```bash
+python make_windows.py data_tokens data_windows --seq-len 2048 --stride 1024
+python make_windows.py data_tokens data_windows --min-len 512
+python make_windows.py data_tokens data_windows --limit-docs 50
+python make_windows.py data_tokens data_windows --overwrite
+```
 
 ## Download a HF Dataset Repo (MIDI Files)
 
