@@ -27,4 +27,4 @@ tokens.npy
 
 .env
 
-
+*.mid

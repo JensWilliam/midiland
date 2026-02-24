@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Write MIDI files from parsed event objects.
+Parse and write MIDI files from/to simple event objects.
 
 CLI:
     python midi_writer.py input.mid output.mid
@@ -9,23 +9,231 @@ CLI:
 from __future__ import annotations
 
 import argparse
+from collections import defaultdict
 from dataclasses import dataclass
 from pathlib import Path
-
-from midi_parser import (
-    Event,
-    KeySignatureEvent,
-    NoteEvent,
-    ProgramChangeEvent,
-    TempoEvent,
-    TimeSignatureEvent,
-    parse_midi_file,
-)
+from typing import DefaultDict, Iterable, TypeAlias
 
 try:
     import mido
 except ModuleNotFoundError:
     mido = None
+
+
+@dataclass(frozen=True, slots=True)
+class Event:
+    """Base event with absolute time in MIDI ticks."""
+
+    time: int
+
+
+@dataclass(frozen=True, slots=True)
+class NoteEvent(Event):
+    """A note with onset time and duration in MIDI ticks."""
+
+    duration_ticks: int
+    channel: int
+    program: int
+    pitch: int
+    velocity: int
+
+
+@dataclass(frozen=True, slots=True)
+class ProgramChangeEvent(Event):
+    """Program change (instrument) event in MIDI ticks."""
+
+    channel: int
+    program: int
+
+
+@dataclass(frozen=True, slots=True)
+class TempoEvent(Event):
+    """Tempo (microseconds per beat) meta event."""
+
+    tempo: int
+
+
+@dataclass(frozen=True, slots=True)
+class TimeSignatureEvent(Event):
+    """Time signature meta event."""
+
+    numerator: int
+    denominator: int
+
+
+@dataclass(frozen=True, slots=True)
+class KeySignatureEvent(Event):
+    """Key signature meta event."""
+
+    key: str
+
+
+MidiEvent: TypeAlias = (
+    NoteEvent | ProgramChangeEvent | TempoEvent | TimeSignatureEvent | KeySignatureEvent
+)
+
+
+@dataclass(frozen=True, slots=True)
+class QuantizedNoteEvent:
+    """Single symbolic note event after quantization."""
+
+    pitch: int
+    start_step: int
+    duration_step: int
+    velocity: int
+    program: int
+    channel: int
+
+
+def parse_midi_file(
+    midi_path: str | Path,
+    *,
+    ignore_drums: bool = True,
+    include_meta: bool = False,
+    notes_only: bool = False,
+) -> list[MidiEvent] | list[NoteEvent]:
+    """
+    Parse a MIDI file into typed events with absolute MIDI tick timing.
+
+    Args:
+        midi_path: Input .mid file path.
+        ignore_drums: If True, drop channel 10 (index 9) events.
+        include_meta: If True, also include tempo/time/key-signature meta events.
+        notes_only: If True, return only NoteEvent objects.
+    """
+    if mido is None:
+        raise ModuleNotFoundError(
+            "mido is required for MIDI parsing. Install it with: pip install mido"
+        )
+
+    midi = mido.MidiFile(str(midi_path))
+
+    channel_program = {channel: 0 for channel in range(16)}
+    active_notes: DefaultDict[tuple[int, int], list[tuple[int, int, int]]] = defaultdict(
+        list
+    )
+
+    events: list[MidiEvent] = []
+    abs_tick = 0
+
+    for msg in mido.merge_tracks(midi.tracks):
+        abs_tick += msg.time
+
+        if msg.is_meta:
+            if include_meta:
+                if msg.type == "set_tempo" and hasattr(msg, "tempo"):
+                    events.append(TempoEvent(time=int(abs_tick), tempo=int(msg.tempo)))
+                elif msg.type == "time_signature" and hasattr(msg, "numerator"):
+                    events.append(
+                        TimeSignatureEvent(
+                            time=int(abs_tick),
+                            numerator=int(msg.numerator),
+                            denominator=int(msg.denominator),
+                        )
+                    )
+                elif msg.type == "key_signature" and hasattr(msg, "key"):
+                    events.append(KeySignatureEvent(time=int(abs_tick), key=str(msg.key)))
+            continue
+
+        if not hasattr(msg, "channel"):
+            continue
+
+        channel = msg.channel
+        if ignore_drums and channel == 9:
+            continue
+
+        if msg.type == "program_change":
+            channel_program[channel] = msg.program
+            events.append(
+                ProgramChangeEvent(
+                    time=int(abs_tick), channel=int(channel), program=int(msg.program)
+                )
+            )
+            continue
+
+        if msg.type == "note_on" and msg.velocity > 0:
+            active_notes[(channel, msg.note)].append(
+                (abs_tick, msg.velocity, channel_program[channel])
+            )
+            continue
+
+        is_note_off = msg.type == "note_off" or (
+            msg.type == "note_on" and msg.velocity == 0
+        )
+        if not is_note_off:
+            continue
+
+        key = (channel, msg.note)
+        if not active_notes[key]:
+            continue
+
+        start_tick, velocity, program = active_notes[key].pop(0)
+        end_tick = max(start_tick + 1, abs_tick)
+        duration_ticks = max(1, int(end_tick - start_tick))
+        events.append(
+            NoteEvent(
+                time=int(start_tick),
+                duration_ticks=int(duration_ticks),
+                channel=int(channel),
+                program=int(program),
+                pitch=int(msg.note),
+                velocity=int(velocity),
+            )
+        )
+
+    def _event_sort_key(e: MidiEvent) -> tuple[int, int, int, int]:
+        order: dict[type, int] = {
+            TempoEvent: 0,
+            TimeSignatureEvent: 1,
+            KeySignatureEvent: 2,
+            ProgramChangeEvent: 3,
+            NoteEvent: 4,
+        }
+        if isinstance(e, NoteEvent):
+            return (int(e.time), order[NoteEvent], int(e.channel), int(e.pitch))
+        if isinstance(e, ProgramChangeEvent):
+            return (int(e.time), order[ProgramChangeEvent], int(e.channel), int(e.program))
+        if isinstance(e, TempoEvent):
+            return (int(e.time), order[TempoEvent], int(e.tempo), 0)
+        if isinstance(e, TimeSignatureEvent):
+            return (
+                int(e.time),
+                order[TimeSignatureEvent],
+                int(e.numerator),
+                int(e.denominator),
+            )
+        return (int(e.time), order[KeySignatureEvent], 0, 0)
+
+    events.sort(key=_event_sort_key)
+    if notes_only:
+        return [e for e in events if isinstance(e, NoteEvent)]
+    return events
+
+
+def quantize_note_events(
+    notes: Iterable[NoteEvent],
+    *,
+    ticks_per_beat: int,
+    steps_per_beat: int = 4,
+) -> list[QuantizedNoteEvent]:
+    ticks_per_step = int(ticks_per_beat) / float(int(steps_per_beat))
+    quantized: list[QuantizedNoteEvent] = []
+    for note in notes:
+        start_step = int(round(int(note.time) / ticks_per_step))
+        end_step = int(round(int(note.time + note.duration_ticks) / ticks_per_step))
+        duration_step = max(1, int(end_step - start_step))
+        quantized.append(
+            QuantizedNoteEvent(
+                pitch=int(note.pitch),
+                start_step=int(start_step),
+                duration_step=int(duration_step),
+                velocity=int(note.velocity),
+                program=int(note.program),
+                channel=int(note.channel),
+            )
+        )
+    quantized.sort(key=lambda n: (n.start_step, n.pitch, n.program, n.channel))
+    return quantized
 
 
 @dataclass(frozen=True, slots=True)
