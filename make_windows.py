@@ -25,7 +25,10 @@ import json
 from dataclasses import asdict
 from pathlib import Path
 
-import numpy as np
+try:
+    import numpy as np
+except ModuleNotFoundError as e:
+    raise SystemExit("Missing dependency: numpy. Install with: pip install -r requirements.txt") from e
 
 from tokenizer import MidiEventTokenizer, TokenizerConfig
 
@@ -297,4 +300,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

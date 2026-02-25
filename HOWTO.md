@@ -116,6 +116,24 @@ If something sounds wrong in the `_out.mid`:
 | Preprocess a dataset folder | `python preprocess_dataset.py midis data_tokens` |
 | Make training windows | `python make_windows.py data_tokens data_windows` |
 
+## Train (Toy Baseline)
+
+These scripts are a minimal baseline for next-token prediction.
+
+Train:
+```bash
+python train_lm.py data_windows --steps 10000 --batch-size 16
+```
+
+Checkpoint outputs:
+- `checkpoints/latest.pt` — latest step (good for resuming)
+- `checkpoints/best.pt` — best validation loss (often best for sampling)
+
+Sample (prints readable token strings):
+```bash
+python sample_lm.py checkpoints/best.pt --max-new 512
+```
+
 ## Make Fixed-Length Training Windows
 
 Turns per-MIDI token arrays into fixed-length windows (default `seq_len=2048`, `stride=1024`).
