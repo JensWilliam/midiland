@@ -138,6 +138,7 @@ python sample_lm.py checkpoints/best.pt --max-new 512
 
 Turns per-MIDI token arrays into fixed-length windows (default `seq_len=2048`, `stride=1024`).
 Windows never cross song boundaries, and window boundaries are aligned so they don’t cut inside EV_* arguments.
+By default it also prepends a fixed-size **state header** to each window (tempo/TS/programs/bar-pos).
 
 ```bash
 python make_windows.py data_tokens data_windows
@@ -149,6 +150,7 @@ python make_windows.py data_tokens data_windows --seq-len 2048 --stride 1024
 python make_windows.py data_tokens data_windows --min-len 512
 python make_windows.py data_tokens data_windows --limit-docs 50
 python make_windows.py data_tokens data_windows --overwrite
+python make_windows.py data_tokens data_windows --no-header
 ```
 
 ## Download a HF Dataset Repo (MIDI Files)
