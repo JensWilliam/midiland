@@ -45,7 +45,14 @@ class GPT(nn.Module):
             batch_first=True,
             norm_first=True,
         )
-        self.blocks = nn.TransformerEncoder(layer, num_layers=int(cfg.n_layers))
+        # Disable nested tensor fast-path to avoid a noisy warning in some torch versions.
+        # (Nested tensors are not used when norm_first=True anyway.)
+        try:
+            self.blocks = nn.TransformerEncoder(
+                layer, num_layers=int(cfg.n_layers), enable_nested_tensor=False
+            )
+        except TypeError:
+            self.blocks = nn.TransformerEncoder(layer, num_layers=int(cfg.n_layers))
         self.ln_f = nn.LayerNorm(int(cfg.d_model))
         self.lm_head = nn.Linear(int(cfg.d_model), int(cfg.vocab_size), bias=False)
 
@@ -87,4 +94,3 @@ class GPT(nn.Module):
         x = self.ln_f(x)
         logits = self.lm_head(x)
         return logits
-

@@ -125,6 +125,11 @@ Train:
 python train_lm.py data_windows --steps 10000 --batch-size 16
 ```
 
+CPU debug run (recommended on laptops):
+```bash
+python train_lm.py data_windows_hdr_test --device cpu --num-workers 0 --cpu-threads 2 --batch-size 2 --steps 200 --log-every 1
+```
+
 Checkpoint outputs:
 - `checkpoints/latest.pt` — latest step (good for resuming)
 - `checkpoints/best.pt` — best validation loss (often best for sampling)

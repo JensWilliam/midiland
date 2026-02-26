@@ -9,8 +9,8 @@ from __future__ import annotations
 
 import argparse
 import json
-import math
 import random
+import time
 from dataclasses import asdict
 from pathlib import Path
 
@@ -98,6 +98,12 @@ def main() -> None:
     p.add_argument("--out", default="checkpoints", help="Checkpoint output folder.")
     p.add_argument("--batch-size", type=int, default=16)
     p.add_argument("--num-workers", type=int, default=2)
+    p.add_argument(
+        "--log-every",
+        type=int,
+        default=50,
+        help="Print loss every N steps (default: 50).",
+    )
     p.add_argument("--val-fraction", type=float, default=0.01)
     p.add_argument("--seed", type=int, default=1337)
     p.add_argument("--steps", type=int, default=10_000)
@@ -115,10 +121,19 @@ def main() -> None:
 
     # Device
     p.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
+    p.add_argument(
+        "--cpu-threads",
+        type=int,
+        help="If set, calls torch.set_num_threads(N) and torch.set_num_interop_threads(min(2,N)).",
+    )
     args = p.parse_args()
 
     set_seed(int(args.seed))
     device = torch.device(str(args.device))
+    if device.type == "cpu" and args.cpu_threads is not None:
+        n = max(1, int(args.cpu_threads))
+        torch.set_num_threads(n)
+        torch.set_num_interop_threads(min(2, n))
 
     data_windows = Path(args.data_windows)
     windows_cfg = load_windows_config(data_windows)
@@ -180,38 +195,54 @@ def main() -> None:
 
     step = 0
     it = iter(train_loader)
-    while step < int(args.steps):
-        try:
-            batch = next(it)
-        except StopIteration:
-            it = iter(train_loader)
-            batch = next(it)
+    t0 = time.perf_counter()
+    try:
+        while step < int(args.steps):
+            try:
+                batch = next(it)
+            except StopIteration:
+                it = iter(train_loader)
+                batch = next(it)
 
-        x = batch.to(device, non_blocking=True)
-        logits = model(x, pad_id=tokenizer.PAD)
-        targets = x[:, 1:].contiguous()
-        pred = logits[:, :-1, :].contiguous()
-        targets_masked = targets.clone()
-        targets_masked[targets_masked.eq(int(tokenizer.PAD))] = -100
-        loss = F.cross_entropy(pred.view(-1, pred.size(-1)), targets_masked.view(-1), ignore_index=-100)
+            x = batch.to(device, non_blocking=True)
+            logits = model(x, pad_id=tokenizer.PAD)
+            targets = x[:, 1:].contiguous()
+            pred = logits[:, :-1, :].contiguous()
+            targets_masked = targets.clone()
+            targets_masked[targets_masked.eq(int(tokenizer.PAD))] = -100
+            loss = F.cross_entropy(
+                pred.view(-1, pred.size(-1)), targets_masked.view(-1), ignore_index=-100
+            )
 
-        optim.zero_grad(set_to_none=True)
-        loss.backward()
-        if float(args.grad_clip) > 0:
-            torch.nn.utils.clip_grad_norm_(model.parameters(), float(args.grad_clip))
-        optim.step()
+            optim.zero_grad(set_to_none=True)
+            loss.backward()
+            if float(args.grad_clip) > 0:
+                torch.nn.utils.clip_grad_norm_(model.parameters(), float(args.grad_clip))
+            optim.step()
 
-        step += 1
-        if step % 50 == 0:
-            print(f"step {step} loss {loss.item():.4f}")
+            step += 1
+            if step == 1 or (int(args.log_every) > 0 and step % int(args.log_every) == 0):
+                dt = time.perf_counter() - t0
+                print(f"step {step} loss {loss.item():.4f} ({dt:.1f}s)", flush=True)
 
-        if val_loader is not None and step % int(args.eval_every) == 0:
-            val_loss = evaluate(model, val_loader, device, pad_id=tokenizer.PAD)
-            print(f"eval step {step} val_loss {val_loss:.4f}")
-            if best_val_loss is None or val_loss < best_val_loss:
-                best_val_loss = float(val_loss)
+            if val_loader is not None and step % int(args.eval_every) == 0:
+                val_loss = evaluate(model, val_loader, device, pad_id=tokenizer.PAD)
+                print(f"eval step {step} val_loss {val_loss:.4f}", flush=True)
+                if best_val_loss is None or val_loss < best_val_loss:
+                    best_val_loss = float(val_loss)
+                    save_checkpoint(
+                        out_dir / "best.pt",
+                        step=step,
+                        model=model,
+                        optim=optim,
+                        cfg=cfg,
+                        tokenizer_cfg=tokenizer_cfg,
+                        best_val_loss=best_val_loss,
+                    )
+
+            if step % int(args.save_every) == 0:
                 save_checkpoint(
-                    out_dir / "best.pt",
+                    out_dir / "latest.pt",
                     step=step,
                     model=model,
                     optim=optim,
@@ -219,17 +250,18 @@ def main() -> None:
                     tokenizer_cfg=tokenizer_cfg,
                     best_val_loss=best_val_loss,
                 )
-
-        if step % int(args.save_every) == 0:
-            save_checkpoint(
-                out_dir / "latest.pt",
-                step=step,
-                model=model,
-                optim=optim,
-                cfg=cfg,
-                tokenizer_cfg=tokenizer_cfg,
-                best_val_loss=best_val_loss,
-            )
+    except KeyboardInterrupt:
+        print("\nInterrupted; saving latest checkpoint...", flush=True)
+        save_checkpoint(
+            out_dir / "latest.pt",
+            step=step,
+            model=model,
+            optim=optim,
+            cfg=cfg,
+            tokenizer_cfg=tokenizer_cfg,
+            best_val_loss=best_val_loss,
+        )
+        raise SystemExit(130) from None
 
     save_checkpoint(
         out_dir / "latest.pt",
