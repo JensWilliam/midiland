@@ -6,7 +6,7 @@ This is intentionally simple: it downloads the dataset repository snapshot and t
 copies/links any *.mid/*.midi files into a local folder.
 
 Example:
-  python download_hf_dataset.py drengskapur/midi-classical-music data_midi
+  python -m midiland.cli.download_hf_dataset drengskapur/midi-classical-music data_midi
 
 If the repo is private, set an auth token via environment variables, e.g.:
   export HF_TOKEN=...

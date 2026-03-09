@@ -16,8 +16,8 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
-from midi_io import canonical_events_to_midi, diff_events, midi_to_canonical_events
-from tokenizer import MidiEventTokenizer, TokenizerConfig
+from midiland.midi_io import canonical_events_to_midi, diff_events, midi_to_canonical_events
+from midiland.tokenizer import MidiEventTokenizer, TokenizerConfig
 
 
 def main() -> None:

@@ -32,7 +32,7 @@ try:
 except ModuleNotFoundError as e:
     raise SystemExit("Missing dependency: numpy. Install with: pip install -r requirements.txt") from e
 
-from tokenizer import MidiEventTokenizer, TokenizerConfig, bpm_to_bin
+from midiland.tokenizer import MidiEventTokenizer, TokenizerConfig, bpm_to_bin
 
 
 ARG_TOKEN_TYPES = {

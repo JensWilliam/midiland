@@ -23,8 +23,8 @@ try:
 except ModuleNotFoundError as e:
     raise SystemExit("Missing dependency: numpy. Install with: pip install -r requirements.txt") from e
 
-from midi_io import midi_to_canonical_events
-from tokenizer import MidiEventTokenizer, TokenizerConfig
+from midiland.midi_io import midi_to_canonical_events
+from midiland.tokenizer import MidiEventTokenizer, TokenizerConfig
 
 
 def _iter_mid_files(root: Path) -> list[Path]:

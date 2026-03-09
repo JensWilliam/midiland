@@ -22,9 +22,9 @@ import torch
 import torch.nn.functional as F
 from torch.utils.data import DataLoader, Subset
 
-from lm_model import GPT, GPTConfig
-from tokenizer import MidiEventTokenizer, TokenizerConfig
-from window_dataset import NpyWindowDataset
+from midiland.lm_model import GPT, GPTConfig
+from midiland.tokenizer import MidiEventTokenizer, TokenizerConfig
+from midiland.window_dataset import NpyWindowDataset
 
 
 def set_seed(seed: int) -> None:

@@ -3,7 +3,7 @@
 This repo is built around one idea:
 
 1. Convert MIDI into a **canonical, lossy event list** (quantized to steps + binned values).
-2. Convert events into **token IDs** (ints) with `tokenizer.py`.
+2. Convert events into **token IDs** (ints) with `midiland/tokenizer.py`.
 3. Use those token IDs for training / generation.
 
 Lossy is intentional: you choose the resolution/bins up front so the model has a simpler job.
@@ -32,10 +32,10 @@ If you change these later, previously exported token files won’t match the new
 
 ## Files and What They Do
 
-- `tokenizer.py` — defines the token vocabulary and `encode()/decode()` between events ↔ token IDs.
-- `midi_io.py` — MIDI ↔ canonical event list (quantize + bin; meant to be reused by other scripts).
-- `midi_roundtrip.py` — CLI sanity check: MIDI → canonical events → tokens → events → MIDI.
-- `preprocess_dataset.py` — converts a folder of MIDIs into per-file `.npy` token arrays + manifest/stats.
+- `midiland/tokenizer.py` — defines the token vocabulary and `encode()/decode()` between events ↔ token IDs.
+- `midiland/midi_io.py` — MIDI ↔ canonical event list (quantize + bin; meant to be reused by other scripts).
+- `midiland/cli/midi_roundtrip.py` — CLI sanity check: MIDI → canonical events → tokens → events → MIDI.
+- `midiland/cli/preprocess_dataset.py` — converts a folder of MIDIs into per-file `.npy` token arrays + manifest/stats.
 
 ## Round-trip Test (Recommended First Check)
 
@@ -44,7 +44,7 @@ Runs a “lossy but strict” roundtrip:
 - not strict for raw MIDI values (because we intentionally quantize/bin)
 
 ```bash
-python midi_roundtrip.py path/to/song.mid
+python -m midiland.cli.midi_roundtrip path/to/song.mid
 ```
 
 Outputs:
@@ -53,10 +53,10 @@ Outputs:
 
 Useful flags:
 ```bash
-python midi_roundtrip.py song.mid --steps-per-beat 8
-python midi_roundtrip.py song.mid --keep-drums
-python midi_roundtrip.py song.mid --print-tokens 120
-python midi_roundtrip.py song.mid --out /tmp/custom_name.mid
+python -m midiland.cli.midi_roundtrip song.mid --steps-per-beat 8
+python -m midiland.cli.midi_roundtrip song.mid --keep-drums
+python -m midiland.cli.midi_roundtrip song.mid --print-tokens 120
+python -m midiland.cli.midi_roundtrip song.mid --out /tmp/custom_name.mid
 ```
 
 ## Preprocess a Dataset Folder into `.npy` Tokens
@@ -64,7 +64,7 @@ python midi_roundtrip.py song.mid --out /tmp/custom_name.mid
 This creates **one token file per MIDI** (keeps song boundaries).
 
 ```bash
-python preprocess_dataset.py /path/to/midi_folder data_tokens
+python -m midiland.cli.preprocess_dataset /path/to/midi_folder data_tokens
 ```
 
 It writes:
@@ -75,13 +75,13 @@ It writes:
 
 Useful flags:
 ```bash
-python preprocess_dataset.py midis data_tokens --steps-per-beat 8
-python preprocess_dataset.py midis data_tokens --dtype uint16
-python preprocess_dataset.py midis data_tokens --dtype int32
-python preprocess_dataset.py midis data_tokens --keep-drums
-python preprocess_dataset.py midis data_tokens --overwrite
-python preprocess_dataset.py midis data_tokens --limit 100
-python preprocess_dataset.py midis data_tokens --print-every 50
+python -m midiland.cli.preprocess_dataset midis data_tokens --steps-per-beat 8
+python -m midiland.cli.preprocess_dataset midis data_tokens --dtype uint16
+python -m midiland.cli.preprocess_dataset midis data_tokens --dtype int32
+python -m midiland.cli.preprocess_dataset midis data_tokens --keep-drums
+python -m midiland.cli.preprocess_dataset midis data_tokens --overwrite
+python -m midiland.cli.preprocess_dataset midis data_tokens --limit 100
+python -m midiland.cli.preprocess_dataset midis data_tokens --print-every 50
 ```
 
 Notes:
@@ -111,10 +111,10 @@ If something sounds wrong in the `_out.mid`:
 
 | Task | Command |
 | --- | --- |
-| Roundtrip one file | `python midi_roundtrip.py song.mid` |
-| Roundtrip w/ more resolution | `python midi_roundtrip.py song.mid --steps-per-beat 8` |
-| Preprocess a dataset folder | `python preprocess_dataset.py midis data_tokens` |
-| Make training windows | `python make_windows.py data_tokens data_windows` |
+| Roundtrip one file | `python -m midiland.cli.midi_roundtrip song.mid` |
+| Roundtrip w/ more resolution | `python -m midiland.cli.midi_roundtrip song.mid --steps-per-beat 8` |
+| Preprocess a dataset folder | `python -m midiland.cli.preprocess_dataset midis data_tokens` |
+| Make training windows | `python -m midiland.cli.make_windows data_tokens data_windows` |
 
 ## Train (Toy Baseline)
 
@@ -122,12 +122,12 @@ These scripts are a minimal baseline for next-token prediction.
 
 Train:
 ```bash
-python train_lm.py data_windows --steps 10000 --batch-size 16
+python -m midiland.cli.train_lm data_windows --steps 10000 --batch-size 16
 ```
 
 CPU debug run (recommended on laptops):
 ```bash
-python train_lm.py data_windows_hdr_test --device cpu --num-workers 0 --cpu-threads 2 --batch-size 2 --steps 200 --log-every 1
+python -m midiland.cli.train_lm data_windows_hdr_test --device cpu --num-workers 0 --cpu-threads 2 --batch-size 2 --steps 200 --log-every 1
 ```
 
 Checkpoint outputs:
@@ -136,7 +136,7 @@ Checkpoint outputs:
 
 Sample (prints readable token strings):
 ```bash
-python sample_lm.py checkpoints/best.pt --max-new 512
+python -m midiland.cli.sample_lm checkpoints/best.pt --max-new 512
 ```
 
 ## Make Fixed-Length Training Windows
@@ -146,16 +146,16 @@ Windows never cross song boundaries, and window boundaries are aligned so they d
 By default it also prepends a fixed-size **state header** to each window (tempo/TS/programs/bar-pos).
 
 ```bash
-python make_windows.py data_tokens data_windows
+python -m midiland.cli.make_windows data_tokens data_windows
 ```
 
 Useful flags:
 ```bash
-python make_windows.py data_tokens data_windows --seq-len 2048 --stride 1024
-python make_windows.py data_tokens data_windows --min-len 512
-python make_windows.py data_tokens data_windows --limit-docs 50
-python make_windows.py data_tokens data_windows --overwrite
-python make_windows.py data_tokens data_windows --no-header
+python -m midiland.cli.make_windows data_tokens data_windows --seq-len 2048 --stride 1024
+python -m midiland.cli.make_windows data_tokens data_windows --min-len 512
+python -m midiland.cli.make_windows data_tokens data_windows --limit-docs 50
+python -m midiland.cli.make_windows data_tokens data_windows --overwrite
+python -m midiland.cli.make_windows data_tokens data_windows --no-header
 ```
 
 ## Download a HF Dataset Repo (MIDI Files)
@@ -164,7 +164,7 @@ If your dataset lives on Hugging Face as a dataset repo with `.mid` files (like 
 you can download the MIDI files into a local folder:
 
 ```bash
-python download_hf_dataset.py drengskapur/midi-classical-music data_midi
+python -m midiland.cli.download_hf_dataset drengskapur/midi-classical-music data_midi
 ```
 
 Outputs:
@@ -173,8 +173,8 @@ Outputs:
 
 Useful flags:
 ```bash
-python download_hf_dataset.py drengskapur/midi-classical-music data_midi --mode copy
-python download_hf_dataset.py drengskapur/midi-classical-music data_midi --limit 50
-python download_hf_dataset.py drengskapur/midi-classical-music data_midi --revision main
-python download_hf_dataset.py drengskapur/midi-classical-music data_midi --overwrite
+python -m midiland.cli.download_hf_dataset drengskapur/midi-classical-music data_midi --mode copy
+python -m midiland.cli.download_hf_dataset drengskapur/midi-classical-music data_midi --limit 50
+python -m midiland.cli.download_hf_dataset drengskapur/midi-classical-music data_midi --revision main
+python -m midiland.cli.download_hf_dataset drengskapur/midi-classical-music data_midi --overwrite
 ```

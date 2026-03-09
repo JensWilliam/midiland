@@ -18,8 +18,8 @@ except ModuleNotFoundError as e:
 import torch
 import torch.nn.functional as F
 
-from lm_model import GPT, GPTConfig
-from tokenizer import MidiEventTokenizer, TokenizerConfig
+from midiland.lm_model import GPT, GPTConfig
+from midiland.tokenizer import MidiEventTokenizer, TokenizerConfig
 
 
 def _load_checkpoint(path: Path) -> dict:

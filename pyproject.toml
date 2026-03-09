@@ -1,0 +1,29 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "midiland"
+version = "0.1.0"
+description = "MIDI tokenization and small language-model training utilities."
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+  "datasets",
+  "huggingface_hub",
+  "mido",
+  "numpy",
+  "torch",
+]
+
+[project.scripts]
+midiland-download-hf = "midiland.cli.download_hf_dataset:main"
+midiland-make-windows = "midiland.cli.make_windows:main"
+midiland-midi-writer = "midiland.cli.midi_writer:main"
+midiland-preprocess = "midiland.cli.preprocess_dataset:main"
+midiland-roundtrip = "midiland.cli.midi_roundtrip:main"
+midiland-sample = "midiland.cli.sample_lm:main"
+midiland-train = "midiland.cli.train_lm:main"
+
+[tool.setuptools.packages.find]
+include = ["midiland*"]

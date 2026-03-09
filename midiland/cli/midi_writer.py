@@ -3,7 +3,7 @@
 Parse and write MIDI files from/to simple event objects.
 
 CLI:
-    python midi_writer.py input.mid output.mid
+    python -m midiland.cli.midi_writer input.mid output.mid
 """
 
 from __future__ import annotations

@@ -19,7 +19,7 @@ from collections import defaultdict
 from pathlib import Path
 from typing import DefaultDict, Iterable
 
-from tokenizer import (
+from .tokenizer import (
     Event,
     Note,
     ProgramChange,
