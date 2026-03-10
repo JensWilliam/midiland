@@ -139,6 +139,11 @@ Sample (prints readable token strings):
 python -m midiland.cli.sample_lm checkpoints/best.pt --max-new 512
 ```
 
+Sample and write a MIDI file:
+```bash
+python -m midiland.cli.sample_midi checkpoints/best.pt generated.mid --max-new 512
+```
+
 ## Make Fixed-Length Training Windows
 
 Turns per-MIDI token arrays into fixed-length windows (default `seq_len=2048`, `stride=1024`).

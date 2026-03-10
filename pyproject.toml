@@ -23,6 +23,7 @@ midiland-midi-writer = "midiland.cli.midi_writer:main"
 midiland-preprocess = "midiland.cli.preprocess_dataset:main"
 midiland-roundtrip = "midiland.cli.midi_roundtrip:main"
 midiland-sample = "midiland.cli.sample_lm:main"
+midiland-sample-midi = "midiland.cli.sample_midi:main"
 midiland-train = "midiland.cli.train_lm:main"
 
 [tool.setuptools.packages.find]

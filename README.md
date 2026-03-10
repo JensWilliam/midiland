@@ -65,6 +65,12 @@ Sample from a trained checkpoint:
 python -m midiland.cli.sample_lm checkpoints/best.pt --max-new 512
 ```
 
+Sample from a trained checkpoint and write a MIDI file:
+
+```bash
+python -m midiland.cli.sample_midi checkpoints/best.pt generated.mid --max-new 512
+```
+
 Download MIDI files from a Hugging Face dataset repo:
 
 ```bash
@@ -91,6 +97,7 @@ If you ran `pip install -e .`, these commands are available:
 - `midiland-make-windows`
 - `midiland-train`
 - `midiland-sample`
+- `midiland-sample-midi`
 - `midiland-download-hf`
 - `midiland-midi-writer`
 
