@@ -12,6 +12,7 @@ import json
 import random
 import time
 from dataclasses import asdict
+from contextlib import nullcontext
 from pathlib import Path
 
 try:
@@ -27,6 +28,13 @@ from midiland.tokenizer import MidiEventTokenizer, TokenizerConfig
 from midiland.window_dataset import NpyWindowDataset
 
 
+def _normalize_tokenizer_cfg_dict(cfg_dict: dict) -> dict:
+    out = dict(cfg_dict)
+    if isinstance(out.get("ts_denominators"), list):
+        out["ts_denominators"] = tuple(out["ts_denominators"])
+    return out
+
+
 def set_seed(seed: int) -> None:
     random.seed(seed)
     np.random.seed(seed)
@@ -39,6 +47,17 @@ def load_windows_config(data_windows: Path) -> dict:
     if not cfg_path.exists():
         raise SystemExit(f"Missing {cfg_path} (did you run make_windows.py?)")
     return json.loads(cfg_path.read_text(encoding="utf-8"))
+
+
+def load_checkpoint(path: str | Path, *, device: str | torch.device = "cpu") -> dict:
+    return torch.load(str(path), map_location=device)
+
+
+def move_optimizer_to_device(optim: torch.optim.Optimizer, device: torch.device) -> None:
+    for state in optim.state.values():
+        for key, value in state.items():
+            if isinstance(value, torch.Tensor):
+                state[key] = value.to(device)
 
 
 def split_indices(n: int, val_fraction: float, seed: int) -> tuple[list[int], list[int]]:
@@ -74,19 +93,36 @@ def save_checkpoint(
 
 
 @torch.no_grad()
-def evaluate(model: GPT, loader: DataLoader, device: torch.device, pad_id: int = 0) -> float:
+def evaluate(
+    model: GPT,
+    loader: DataLoader,
+    device: torch.device,
+    *,
+    pad_id: int = 0,
+    use_amp: bool = False,
+) -> float:
     model.eval()
     losses: list[float] = []
     for batch in loader:
         x = batch.to(device, non_blocking=True)
-        logits = model(x, pad_id=pad_id)
-        # Next-token prediction: shift by 1.
-        targets = x[:, 1:].contiguous()
-        pred = logits[:, :-1, :].contiguous()
-        # Ignore PAD targets.
-        targets_masked = targets.clone()
-        targets_masked[targets_masked.eq(int(pad_id))] = -100
-        loss = F.cross_entropy(pred.view(-1, pred.size(-1)), targets_masked.view(-1), ignore_index=-100)
+        amp_ctx = (
+            torch.autocast(device_type="cuda", dtype=torch.float16)
+            if bool(use_amp) and device.type == "cuda"
+            else nullcontext()
+        )
+        with amp_ctx:
+            logits = model(x, pad_id=pad_id)
+            # Next-token prediction: shift by 1.
+            targets = x[:, 1:].contiguous()
+            pred = logits[:, :-1, :].contiguous()
+            # Ignore PAD targets.
+            targets_masked = targets.clone()
+            targets_masked[targets_masked.eq(int(pad_id))] = -100
+            loss = F.cross_entropy(
+                pred.view(-1, pred.size(-1)),
+                targets_masked.view(-1),
+                ignore_index=-100,
+            )
         losses.append(float(loss.item()))
     model.train()
     return float(sum(losses) / max(1, len(losses)))
@@ -112,6 +148,15 @@ def main() -> None:
     p.add_argument("--lr", type=float, default=3e-4)
     p.add_argument("--weight-decay", type=float, default=0.1)
     p.add_argument("--grad-clip", type=float, default=1.0)
+    p.add_argument(
+        "--resume",
+        help="Optional checkpoint path to resume from. Uses the checkpoint's model config/state.",
+    )
+    p.add_argument(
+        "--amp",
+        action="store_true",
+        help="Enable mixed-precision training on CUDA.",
+    )
 
     # Model size knobs
     p.add_argument("--d-model", type=int, default=256)
@@ -138,15 +183,21 @@ def main() -> None:
     data_windows = Path(args.data_windows)
     windows_cfg = load_windows_config(data_windows)
 
-    tokenizer_cfg_dict = windows_cfg["tokenizer_config"]
-    if isinstance(tokenizer_cfg_dict.get("ts_denominators"), list):
-        tokenizer_cfg_dict["ts_denominators"] = tuple(tokenizer_cfg_dict["ts_denominators"])
+    tokenizer_cfg_dict = _normalize_tokenizer_cfg_dict(windows_cfg["tokenizer_config"])
     tokenizer_cfg = TokenizerConfig(**tokenizer_cfg_dict)
     tokenizer = MidiEventTokenizer(tokenizer_cfg)
     vocab_size = int(windows_cfg["vocab_size"])
     seq_len = int(windows_cfg["seq_len"])
     if int(tokenizer.vocab_size) != vocab_size:
         raise SystemExit(f"vocab mismatch: data says {vocab_size}, tokenizer says {tokenizer.vocab_size}")
+
+    resume_ckpt = load_checkpoint(args.resume, device="cpu") if args.resume else None
+    if resume_ckpt is not None:
+        ckpt_tok_cfg = TokenizerConfig(
+            **_normalize_tokenizer_cfg_dict(resume_ckpt["tokenizer_config"])
+        )
+        if asdict(ckpt_tok_cfg) != asdict(tokenizer_cfg):
+            raise SystemExit("Tokenizer config mismatch between data_windows and resume checkpoint.")
 
     ds = NpyWindowDataset(data_windows / "manifest.jsonl")
     train_idx, val_idx = split_indices(len(ds), float(args.val_fraction), int(args.seed))
@@ -173,14 +224,21 @@ def main() -> None:
         else None
     )
 
-    cfg = GPTConfig(
-        vocab_size=vocab_size,
-        max_seq_len=seq_len,
-        d_model=int(args.d_model),
-        n_heads=int(args.n_heads),
-        n_layers=int(args.n_layers),
-        dropout=float(args.dropout),
-    )
+    if resume_ckpt is not None:
+        cfg = GPTConfig(**resume_ckpt["gpt_config"])
+        if int(cfg.vocab_size) != vocab_size:
+            raise SystemExit("Checkpoint vocab size does not match data_windows config.")
+        if int(cfg.max_seq_len) != seq_len:
+            raise SystemExit("Checkpoint max_seq_len does not match data_windows config.")
+    else:
+        cfg = GPTConfig(
+            vocab_size=vocab_size,
+            max_seq_len=seq_len,
+            d_model=int(args.d_model),
+            n_heads=int(args.n_heads),
+            n_layers=int(args.n_layers),
+            dropout=float(args.dropout),
+        )
     model = GPT(cfg).to(device)
 
     optim = torch.optim.AdamW(
@@ -191,9 +249,19 @@ def main() -> None:
     )
 
     out_dir = Path(args.out)
-    best_val_loss: float | None = None
+    use_amp = bool(args.amp) and device.type == "cuda"
+    scaler = torch.cuda.amp.GradScaler(enabled=use_amp)
 
+    best_val_loss: float | None = None
     step = 0
+    if resume_ckpt is not None:
+        model.load_state_dict(resume_ckpt["model_state"], strict=True)
+        optim.load_state_dict(resume_ckpt["optim_state"])
+        move_optimizer_to_device(optim, device)
+        step = int(resume_ckpt.get("step", 0))
+        best_val_loss = resume_ckpt.get("best_val_loss")
+        print(f"Resumed from {args.resume} at step {step}", flush=True)
+
     it = iter(train_loader)
     t0 = time.perf_counter()
     try:
@@ -205,20 +273,30 @@ def main() -> None:
                 batch = next(it)
 
             x = batch.to(device, non_blocking=True)
-            logits = model(x, pad_id=tokenizer.PAD)
-            targets = x[:, 1:].contiguous()
-            pred = logits[:, :-1, :].contiguous()
-            targets_masked = targets.clone()
-            targets_masked[targets_masked.eq(int(tokenizer.PAD))] = -100
-            loss = F.cross_entropy(
-                pred.view(-1, pred.size(-1)), targets_masked.view(-1), ignore_index=-100
-            )
-
             optim.zero_grad(set_to_none=True)
-            loss.backward()
+            amp_ctx = (
+                torch.autocast(device_type="cuda", dtype=torch.float16)
+                if use_amp
+                else nullcontext()
+            )
+            with amp_ctx:
+                logits = model(x, pad_id=tokenizer.PAD)
+                targets = x[:, 1:].contiguous()
+                pred = logits[:, :-1, :].contiguous()
+                targets_masked = targets.clone()
+                targets_masked[targets_masked.eq(int(tokenizer.PAD))] = -100
+                loss = F.cross_entropy(
+                    pred.view(-1, pred.size(-1)),
+                    targets_masked.view(-1),
+                    ignore_index=-100,
+                )
+
+            scaler.scale(loss).backward()
             if float(args.grad_clip) > 0:
+                scaler.unscale_(optim)
                 torch.nn.utils.clip_grad_norm_(model.parameters(), float(args.grad_clip))
-            optim.step()
+            scaler.step(optim)
+            scaler.update()
 
             step += 1
             if step == 1 or (int(args.log_every) > 0 and step % int(args.log_every) == 0):
@@ -226,7 +304,13 @@ def main() -> None:
                 print(f"step {step} loss {loss.item():.4f} ({dt:.1f}s)", flush=True)
 
             if val_loader is not None and step % int(args.eval_every) == 0:
-                val_loss = evaluate(model, val_loader, device, pad_id=tokenizer.PAD)
+                val_loss = evaluate(
+                    model,
+                    val_loader,
+                    device,
+                    pad_id=tokenizer.PAD,
+                    use_amp=use_amp,
+                )
                 print(f"eval step {step} val_loss {val_loss:.4f}", flush=True)
                 if best_val_loss is None or val_loss < best_val_loss:
                     best_val_loss = float(val_loss)
